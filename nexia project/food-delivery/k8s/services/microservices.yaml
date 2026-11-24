@@ -1,0 +1,221 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: restaurant-service
+  labels:
+    app: restaurant-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: restaurant-service
+  template:
+    metadata:
+      labels:
+        app: restaurant-service
+    spec:
+      containers:
+        - name: restaurant-service
+          image: food-delivery/restaurant-service:latest
+          ports:
+            - containerPort: 3002
+              name: http
+            - containerPort: 50052
+              name: grpc
+          env:
+            - name: PORT
+              value: "3002"
+            - name: GRPC_PORT
+              value: "50052"
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: food-secrets
+                  key: mongodb-uri-restaurants
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: food-secrets
+                  key: jwt-secret
+            - name: JAEGER_ENDPOINT
+              value: "http://jaeger:14268/api/traces"
+          resources:
+            requests: { memory: "128Mi", cpu: "100m" }
+            limits: { memory: "512Mi", cpu: "500m" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: restaurant-service
+spec:
+  selector:
+    app: restaurant-service
+  ports:
+    - name: http
+      port: 3002
+      targetPort: 3002
+    - name: grpc
+      port: 50052
+      targetPort: 50052
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  labels:
+    app: order-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      containers:
+        - name: order-service
+          image: food-delivery/order-service:latest
+          ports:
+            - containerPort: 3003
+          env:
+            - name: PORT
+              value: "3003"
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: food-secrets
+                  key: mongodb-uri-orders
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: food-secrets
+                  key: jwt-secret
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: food-secrets
+                  key: rabbitmq-url
+            - name: RESTAURANT_GRPC_URL
+              value: "restaurant-service:50052"
+            - name: USER_GRPC_URL
+              value: "user-service:50051"
+            - name: JAEGER_ENDPOINT
+              value: "http://jaeger:14268/api/traces"
+          resources:
+            requests: { memory: "128Mi", cpu: "100m" }
+            limits: { memory: "512Mi", cpu: "500m" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+spec:
+  selector:
+    app: order-service
+  ports:
+    - port: 3003
+      targetPort: 3003
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  labels:
+    app: payment-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: food-delivery/payment-service:latest
+          ports:
+            - containerPort: 3004
+          env:
+            - name: PORT
+              value: "3004"
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: food-secrets
+                  key: mongodb-uri-payments
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: food-secrets
+                  key: rabbitmq-url
+            - name: JAEGER_ENDPOINT
+              value: "http://jaeger:14268/api/traces"
+          resources:
+            requests: { memory: "128Mi", cpu: "100m" }
+            limits: { memory: "512Mi", cpu: "500m" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+spec:
+  selector:
+    app: payment-service
+  ports:
+    - port: 3004
+      targetPort: 3004
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: delivery-service
+  labels:
+    app: delivery-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: delivery-service
+  template:
+    metadata:
+      labels:
+        app: delivery-service
+    spec:
+      containers:
+        - name: delivery-service
+          image: food-delivery/delivery-service:latest
+          ports:
+            - containerPort: 3005
+          env:
+            - name: PORT
+              value: "3005"
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: food-secrets
+                  key: mongodb-uri-deliveries
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: food-secrets
+                  key: rabbitmq-url
+            - name: JAEGER_ENDPOINT
+              value: "http://jaeger:14268/api/traces"
+          resources:
+            requests: { memory: "128Mi", cpu: "100m" }
+            limits: { memory: "256Mi", cpu: "250m" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: delivery-service
+spec:
+  selector:
+    app: delivery-service
+  ports:
+    - port: 3005
+      targetPort: 3005

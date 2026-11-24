@@ -1,0 +1,200 @@
+# ═══════════════════════════════════════════════════════════════
+#  Kong Declarative Configuration (DB-less mode)
+#  
+#  Routes all /api/* traffic through Kong with:
+#  - JWT auth plugin (validates tokens from User Service)
+#  - Rate limiting (10 req/s per consumer)
+#  - Request logging
+# ═══════════════════════════════════════════════════════════════
+
+_format_version: "3.0"
+_transform: true
+
+# ── Services (upstream NestJS microservices) ──────────────────
+
+services:
+
+  # 1. User Service
+  - name: user-service
+    url: http://user-service:3001
+    connect_timeout: 10000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: user-auth-routes
+        paths:
+          - /api/users/auth
+        strip_path: false
+        methods: [GET, POST, PUT, DELETE, OPTIONS]
+        # No JWT required for auth endpoints
+      - name: user-routes
+        paths:
+          - /api/users
+        strip_path: false
+        methods: [GET, POST, PUT, DELETE, OPTIONS]
+        plugins:
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+          - name: rate-limiting
+            config:
+              minute: 60
+              policy: local
+    plugins:
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service-Name:user-service"
+
+  # 2. Restaurant Service
+  - name: restaurant-service
+    url: http://restaurant-service:3002
+    connect_timeout: 10000
+    write_timeout: 10000
+    read_timeout: 10000
+    routes:
+      - name: restaurant-routes
+        paths:
+          - /api/restaurants
+        strip_path: false
+        methods: [GET, POST, PUT, DELETE, OPTIONS]
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 100
+          policy: local
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service-Name:restaurant-service"
+
+  # 3. Order Service
+  - name: order-service
+    url: http://order-service:3003
+    connect_timeout: 15000
+    write_timeout: 15000
+    read_timeout: 30000
+    routes:
+      - name: order-routes
+        paths:
+          - /api/orders
+        strip_path: false
+        methods: [GET, POST, PUT, DELETE, OPTIONS]
+        plugins:
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+          - name: rate-limiting
+            config:
+              minute: 30
+              policy: local
+    plugins:
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service-Name:order-service"
+
+  # 4. Payment Service
+  - name: payment-service
+    url: http://payment-service:3004
+    connect_timeout: 10000
+    write_timeout: 10000
+    read_timeout: 15000
+    routes:
+      - name: payment-routes
+        paths:
+          - /api/payments
+        strip_path: false
+        methods: [GET, POST, OPTIONS]
+        plugins:
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+          - name: rate-limiting
+            config:
+              minute: 20
+              policy: local
+    plugins:
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service-Name:payment-service"
+
+  # 5. Delivery Service
+  - name: delivery-service
+    url: http://delivery-service:3005
+    connect_timeout: 10000
+    write_timeout: 10000
+    read_timeout: 15000
+    routes:
+      - name: delivery-routes
+        paths:
+          - /api/deliveries
+        strip_path: false
+        methods: [GET, POST, PUT, PATCH, OPTIONS]
+        plugins:
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+          - name: rate-limiting
+            config:
+              minute: 60
+              policy: local
+    plugins:
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service-Name:delivery-service"
+
+# ── Global Plugins ────────────────────────────────────────────
+
+plugins:
+  # CORS for browser clients
+  - name: cors
+    config:
+      origins:
+        - "*"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - PATCH
+        - OPTIONS
+      headers:
+        - Authorization
+        - Content-Type
+        - X-Requested-With
+      exposed_headers:
+        - X-Request-ID
+      credentials: true
+      max_age: 3600
+
+  # Request ID for tracing correlation
+  - name: request-id
+    config:
+      header_name: X-Request-ID
+      echo_downstream: true
+
+# ── JWT Consumers (registered users are consumers) ───────────
+# In production, dynamically create consumers via Admin API after user registration
+
+consumers:
+  - username: food-delivery-app
+    jwt_secrets:
+      - key: food-delivery-app
+        secret: super_secret_jwt_key_change_in_prod
+        algorithm: HS256
